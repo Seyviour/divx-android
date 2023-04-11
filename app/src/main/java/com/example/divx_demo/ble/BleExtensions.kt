@@ -73,3 +73,27 @@ fun BluetoothGattCharacteristic.isIndicatable(): Boolean = containsProperty(Blue
 
 fun BluetoothGattCharacteristic.isNotifiable(): Boolean = containsProperty(BluetoothGattCharacteristic.PROPERTY_NOTIFY)
 
+
+fun BluetoothGattDescriptor.printProperties(): String = mutableListOf<String>().apply {
+    if (isReadable()) add("READABLE")
+    if (isWritable()) add("WRITABLE")
+    if (isEmpty()) add("EMPTY")
+}.joinToString()
+
+fun BluetoothGattDescriptor.isReadable(): Boolean =
+    containsPermission(BluetoothGattDescriptor.PERMISSION_READ)
+
+fun BluetoothGattDescriptor.isWritable(): Boolean =
+    containsPermission(BluetoothGattDescriptor.PERMISSION_WRITE)
+
+fun BluetoothGattDescriptor.containsPermission(permission: Int): Boolean =
+    permissions and permission != 0
+
+fun BluetoothGattDescriptor.isCccd() =
+    uuid.toString().toUpperCase(Locale.US) == CCC_DESCRIPTOR_UUID.toUpperCase(Locale.US)
+
+// ByteArray
+
+fun ByteArray.toHexString(): String =
+    joinToString(separator = " ", prefix = "0x") { String.format("%02X", it) }
+
