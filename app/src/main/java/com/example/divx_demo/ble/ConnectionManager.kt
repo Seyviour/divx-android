@@ -27,7 +27,7 @@ private const val TAG_CONN_MANAGER = "CONNECTION MANAGER"
 private const val GATT_MIN_MTU_SIZE = 23
 private const val GATT_MAX_MTU_SIZE = 517
 
-class ConnectionManager {
+object ConnectionManager {
 
     private var listeners: MutableSet<WeakReference<ConnectionEventListener>> = mutableSetOf()
 
@@ -42,11 +42,10 @@ class ConnectionManager {
 
     fun listenToBondStateChanges(context: Context){
         context.applicationContext.registerReceiver(
-            broadcastReciver,
+            broadcastReceiver,
             IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
         )
     }
-
 
     fun registerListener(listener: ConnectionEventListener) {
         if (listeners.map { it.get() } .contains(listener)) {return}
@@ -167,7 +166,7 @@ class ConnectionManager {
             enqueueOperation(MtuRequest(device, mtu.coerceIn(GATT_MIN_MTU_SIZE, GATT_MAX_MTU_SIZE)))
         } else {
             Log.e(
-                "ConnectionManagaer.RequestMtu",
+                "ConnectionManager.RequestMtu",
                 "Not connected to ${device.address}, cannot request MTU update!"
             )
         }
@@ -223,7 +222,7 @@ class ConnectionManager {
 
         when (operation) {
             is Disconnect -> with(operation) {
-                Log.i("$TAG_CONN_MANAGER.doNextOperation", "Disconnecting frome ${device.address}")
+                Log.i("$TAG_CONN_MANAGER.doNextOperation", "Disconnecting from ${device.address}")
                 gatt.close()
                 deviceGattMap.remove(device)
                 listeners.forEach {it.get()?.onDisconnect?.invoke(device)}
@@ -479,7 +478,7 @@ class ConnectionManager {
             with(descriptor) {
                 when(status) {
                     BluetoothGatt.GATT_SUCCESS -> {
-                        Log.i(TAG_CONN_MANAGER, "Wrote to desciptor $uuid | value ${value.toHexString()}")
+                        Log.i(TAG_CONN_MANAGER, "Wrote to descriptor $uuid | value ${value.toHexString()}")
 
                         if (isCccd()){
                             onCccdWrite(gatt, value, characteristic)
@@ -538,7 +537,7 @@ class ConnectionManager {
         }
     }
 
-    private val broadcastReciver = object : BroadcastReceiver(){
+    private val broadcastReceiver = object : BroadcastReceiver(){
         override fun onReceive(context: Context, intent: Intent) {
             with(intent){
                 if (action == BluetoothDevice.ACTION_BOND_STATE_CHANGED){
