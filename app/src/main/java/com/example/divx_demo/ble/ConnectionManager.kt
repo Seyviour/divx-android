@@ -93,6 +93,7 @@ object ConnectionManager {
         }
     }
 
+
     fun writeCharacteristic(
         device: BluetoothDevice,
         characteristic: BluetoothGattCharacteristic,
@@ -149,6 +150,11 @@ object ConnectionManager {
         } else if (!characteristic.isIndicatable() && !characteristic.isNotifiable()) {
             Log.e("ConnectionManager.EnableNotifications","characteristic ${characteristic.uuid} doesn't support notifications/indications")
         }
+    }
+
+    fun getCharacteristic(device: BluetoothDevice, characteristicUUID: UUID): BluetoothGattCharacteristic?{
+        var characteristic = deviceGattMap[device]?.findCharacteristic(characteristicUUID)
+        return characteristic
     }
 
     fun disableNotifications(device: BluetoothDevice, characteristic: BluetoothGattCharacteristic) {
@@ -434,6 +440,7 @@ object ConnectionManager {
                 signalEndOfOperation()
             }
         }
+
 
         override fun onCharacteristicChanged(
             gatt: BluetoothGatt,
