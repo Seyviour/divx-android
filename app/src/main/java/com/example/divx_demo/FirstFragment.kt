@@ -8,11 +8,9 @@ import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.*
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -24,17 +22,29 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.activityViewModels
+import androidx.media3.common.MediaItem
+import androidx.media3.common.util.Util
+import androidx.media3.datasource.RawResourceDataSource
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.divx_demo.ble.ConnectionManager
+import com.example.divx_demo.ble.isReadable
 import com.example.divx_demo.databinding.FragmentFirstBinding
+import com.example.divx_demo.media.PlaybackService
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import java.util.*
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
  * A simple [Fragment] subclass as the default destination in the navigation.
  */
-
+private const val xCodeUUID = "0000ff01-0000-1000-8000-00805f9b34fb"
 private const val TAG_SCAN_FRAGMENT = "DIVX_SCAN_FRAGMENT"
 
 private const val ENABLE_BLUETOOTH_REQUEST_CODE = 1
@@ -46,160 +56,51 @@ private const val XCODE_CHAR_UUID = "B"
 @SuppressLint("MissingPermission")
 class FirstFragment : Fragment() {
 
+    private val viewModel:DivxViewModel by activityViewModels()
+
+
+    private val bluetoothAdapter: BluetoothAdapter by lazy{
+        val bluetoothManager = activity!!.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothManager.adapter
+    }
+
+    private val bleScanner by lazy {
+        bluetoothAdapter.bluetoothLeScanner
+    }
+
+    private val scanSettings = ScanSettings.Builder()
+        .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+        .build()
+
+
+    private var isScanning = false
+
+
     private val scanResultAdapter: ScanResultAdapter by lazy {
+
+
         ScanResultAdapter(scanResults) {result ->
             if (isScanning){
                 stopBleScan()
             }
             with(result.device){
                 Log.w("ScanResultAdapter", "Connecting to $address")
-                connectGatt(context, false, gattCallback)
+//                connectGatt(context, false, gattCallback)
+                ConnectionManager.connect(this, activity!!)
+                viewModel.setBluetoothDevice(this)
+                var divxCharacteristic = ConnectionManager.getCharacteristic(this, UUID.fromString(xCodeUUID))
+                Log.d(TAG_SCAN_FRAGMENT, "${divxCharacteristic?.uuid ?: "null"}")
+
+                divxCharacteristic?.let{
+                    Log.d("DIVX-NOTIFY", "ENABLING NOTIFICATIONS ON ${divxCharacteristic.uuid}")
+                    ConnectionManager.enableNotifications(this, divxCharacteristic)
+                }
+
             }
         }
     }
-
-    private val operationQueue = ConcurrentLinkedQueue<BleOperationType>()
-    private var pendingOperation: FirstFragment.BleOperationType? = null
-
 
     private lateinit var bluetoothGatt: BluetoothGatt
-
-    private val gattCallback = object: BluetoothGattCallback() {
-        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-            super.onConnectionStateChange(gatt, status, newState)
-            val deviceAddress = gatt.device.address
-
-            if (status == BluetoothGatt.GATT_SUCCESS){
-                if (newState == BluetoothProfile.STATE_CONNECTED){
-                    Log.w(TAG_SCAN_FRAGMENT, "Successfully connected to $deviceAddress")
-                    bluetoothGatt = gatt
-                    Handler(Looper.getMainLooper()).post{
-                        bluetoothGatt?.discoverServices()
-                    }
-                } else if (newState == BluetoothProfile.STATE_CONNECTED){
-                    Log.w(TAG_SCAN_FRAGMENT, "Successfully disconnected from $deviceAddress")
-                    gatt.close()
-                }
-            }else {
-                Log.w("BluetoothGattCallback", "Error $status encountered for $deviceAddress ! Disconnection...")
-                gatt.close()
-            }
-        }
-
-        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            super.onServicesDiscovered(gatt, status)
-            with (gatt){
-                Log.w("BluetoothGattCallback", "Discovered ${services.size} services for ${device.address}")
-                printGattTable()
-            }
-        }
-
-        override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
-            super.onMtuChanged(gatt, mtu, status)
-            Log.w(TAG_SCAN_FRAGMENT, "ATT MTU changed to $mtu, success: ${status == BluetoothGatt.GATT_SUCCESS}")
-        }
-
-        override fun onCharacteristicRead(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            status: Int
-        ) {
-            super.onCharacteristicRead(gatt, characteristic, status)
-            with (characteristic) {
-                when(status) {
-                    BluetoothGatt.GATT_SUCCESS -> {
-                        Log.i("BluetoothGattCallback", "Read characteristic $uuid:\n${value.toHexString()}")
-                        }
-                    BluetoothGatt.GATT_READ_NOT_PERMITTED -> {
-                        Log.e("BluetoothGattCallback", "Read not permitted for $uuid")
-                    }
-                    else -> {
-                        Log.e("BluetoothGattCallback", "Characteristic read failed for $uuid, error: $status")
-                    }
-                }
-            }
-        }
-
-        override fun onCharacteristicChanged(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            value: ByteArray
-        ) {
-            super.onCharacteristicChanged(gatt, characteristic, value)
-
-            with(characteristic){
-                Log.i("BluetoothGattCallback", "Characteristic $uuid changed | value: ${value.toHexString()}")
-            }
-        }
-
-        override fun onCharacteristicWrite(
-            gatt: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            status: Int
-        ) {
-            super.onCharacteristicWrite(gatt, characteristic, status)
-            with(characteristic) {
-                when(status) {
-                    BluetoothGatt.GATT_SUCCESS -> {
-                        Log.i("BluetoothGattCallback", "Wrote to characteristic $uuid | value: ${value.toHexString()}")
-                    }
-                    BluetoothGatt.GATT_INVALID_ATTRIBUTE_LENGTH -> {
-                        Log.e("BluetoothGattCallback", "Write exceeded connection ATT MTU!")
-                    }
-                    BluetoothGatt.GATT_WRITE_NOT_PERMITTED -> {
-                        Log.e("BluetoothGattCallback", "Write not permitted for $uuid!")
-                    }
-                    else -> {
-                        Log.e("BluetoothGattCallback", "Characteristic write failed for $uuid, error:$status")
-                    }
-                }
-            }
-        }
-    }
-
-    fun listenToBondStateChanges(context: Context){
-        context.applicationContext.registerReceiver(broadcastReceiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED))
-    }
-
-    private val broadcastReceiver = object: BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent) {
-            with(intent) {
-                if (action == BluetoothDevice.ACTION_BOND_STATE_CHANGED){
-                    val device = getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
-                    val previousBondSate = getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, -1)
-                    val bondState = getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)
-
-                    val bondTransition = "${previousBondSate.toBondStateDescription()} to " + bondState.toBondStateDescription()
-                    Log.w("Bond state changed", "${device?.address} bond state changed | $bondTransition")
-                }
-            }
-        }
-
-        private fun Int.toBondStateDescription() = when(this) {
-            BluetoothDevice.BOND_BONDED -> "BONDED"
-            BluetoothDevice.BOND_BONDING -> "BONDING"
-            BluetoothDevice.BOND_NONE -> "NOT BONDED"
-            else -> "ERROR: $this"
-        }
-    }
-
-
-    fun writeCharacteristic(characteristic: BluetoothGattCharacteristic, payload: ByteArray){
-        val writeType = when{
-            characteristic.isWritable() ->
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            characteristic.isWritableWithoutResponse() -> {
-                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            }
-            else -> error("Characteristic ${characteristic.uuid} cannot be written to")
-        }
-
-        bluetoothGatt?.let {gatt ->
-            characteristic.writeType = writeType
-            characteristic.value = payload
-            gatt.writeCharacteristic(characteristic)
-        } ?: error("Not connected to a BLE device!")
-    }
 
     fun ByteArray.toHexString(): String = joinToString(separator ="", prefix = "0x") {String.format("%02X", it)}
 
@@ -213,62 +114,8 @@ class FirstFragment : Fragment() {
     }
 
 
-    fun writeDescriptor(descriptor: BluetoothGattDescriptor, payload: ByteArray){
-        bluetoothGatt?.let {gatt ->
-            descriptor.value = payload
-            gatt.writeDescriptor(descriptor)
-        } ?: error("Not connected to a BLE device!")
-    }
-
-    fun enableNotifications(characteristic: BluetoothGattCharacteristic) {
-        val ccdUUID = UUID.fromString(CCC_DESCRIPTOR_UUID)
-        val payload = when{
-            characteristic.isIndicatable() -> BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            characteristic.isNotifiable() -> BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            else -> {Log.e("ConnectionManager", "${characteristic.uuid} doesn't support notifications/indications")
-                    return
-            }
-        }
-
-        characteristic.getDescriptor(ccdUUID)?.let { cccDescriptor ->
-            if (bluetoothGatt?.setCharacteristicNotification(characteristic, true) == false){
-                Log.e("ConnectionManager", "setCharacteristicNotification failed for ${characteristic.uuid}")
-                return
-            }
-            writeDescriptor(cccDescriptor, payload)
-        } ?: Log.e("ConnectionManager", "${characteristic.uuid} doesn't contain the CCC descriptor!")
-    }
-
-    fun disableNotifications(characteristic: BluetoothGattCharacteristic){
-        if (!characteristic.isNotifiable() && !characteristic.isIndicatable()) {
-            Log.e("ConnectionManager", "${characteristic.uuid} doesn't support indications/notifications")
-            return
-        }
-        val cccdUUID = UUID.fromString(CCC_DESCRIPTOR_UUID)
-        characteristic.getDescriptor(cccdUUID)?.let{ cccDescriptor ->
-            if (bluetoothGatt?.setCharacteristicNotification(characteristic, false) == false){
-                Log.e("ConnectionManager", "Disable notification failed for ${characteristic.uuid}")
-            }
-            writeDescriptor(cccDescriptor, BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE)
-        } ?: Log.e("ConnectionManager", "${characteristic.uuid} doesn't contain the CCC descriptor!")
-    }
 
 
-
-    private val bluetoothAdapter: BluetoothAdapter by lazy{
-        val bluetoothManager = activity!!.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        bluetoothManager.adapter
-    }
-
-    private val scanSettings = ScanSettings.Builder()
-        .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-        .build()
-
-    private val bleScanner by lazy {
-        bluetoothAdapter.bluetoothLeScanner
-    }
-
-    private var isScanning = false
 
 
     @SuppressLint("MissingPermission")
@@ -314,7 +161,7 @@ class FirstFragment : Fragment() {
                 PackageManager.PERMISSION_GRANTED
     }
 
-    fun Context.hasRequiredRuntimePermissions(): Boolean {
+    private fun Context.hasRequiredRuntimePermissions(): Boolean {
 
         var retval = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             hasPermission(Manifest.permission.BLUETOOTH_SCAN) &&
@@ -407,9 +254,6 @@ class FirstFragment : Fragment() {
         }
     }
 
-
-
-
     @SuppressLint("MissingPermission")
     private fun startBleScan(): MutableList<ScanResult>{
         scanResults.clear()
@@ -467,84 +311,83 @@ class FirstFragment : Fragment() {
             inflater: LayoutInflater, container: ViewGroup?,
             savedInstanceState: Bundle?
     ): View? {
-
         _binding = FragmentFirstBinding.inflate(inflater, container, false)
+
+
         return binding.root
+
 
     }
 
+    var hasplayed = false
+    private fun play(){
+
+        if (binding.myPlayer.player == null){
+            binding.myPlayer.player = viewModel.player
+        }
+        val uri: Uri = RawResourceDataSource.buildRawResourceUri(R.raw.newton)
+
+
+//        val uri = "https://download.samplelib.com/mp3/sample-15s.mp3"
+        Log.d("DIVX", uri.toString())
+
+        val mediaItem = MediaItem.Builder().setMediaId(uri.toString()).build()
+
+        Log.d("DIVX-PLAAY", binding.myPlayer.player.toString())
+        Log.d("DIVX", "PLAYBACK SERVICE IS RUNNING: ${PlaybackService.isRunning}")
+        binding.myPlayer.player?.addMediaItem(mediaItem)
+        Log.d("DIVX", "PLAYBACK SERVICE IS RUNNING: ${mediaItem.toString()}")
+
+        with(binding.myPlayer.player){
+            this?.prepare()
+            this?.playWhenReady=true
+            this?.play()
+        }
+//        binding.myPlayer.player?.prepare()
+//        binding.myPlayer.player?.playWhenReady = true
+//        binding.myPlayer.player?.play()
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         binding.buttonScan.setOnClickListener {
-
+//            play()
             if (isScanning) {
                 stopBleScan()
 
             } else {
                 startBleScan()
-
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+    }
+
+//    fun play (uri: Uri){
+//        val userAgent = context?.let {
+//            Util.getUserAgent(it.applicationContext, BuildConfig.APPLICATION_ID)
+//        }
+//    }
+    override fun onStart() {
+        if (viewModel.player == null){
+            (activity as MainActivity)!!.acquirePlayer()
+        }
+        binding.myPlayer.player = viewModel.player
+        super.onStart()
+
+    }
+
+    override fun onStop() {
+        super.onStop()
+//        MediaController.releaseFuture(controllerFuture)
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
     }
-
-
-    sealed class BleOperationType {
-        abstract val device: BluetoothDevice
-    }
-
-    data class Connect(override val device: BluetoothDevice, val context: Context): BleOperationType()
-
-    data class CharacteristicRead(override val device: BluetoothDevice, val characteristicUUID: UUID): BleOperationType()
-
-    data class Disconnect(override val device: BluetoothDevice, val context: Context): BleOperationType()
-
-    data class CharacteristicWrite(override val device: BluetoothDevice, val characteristicUUID: UUID): BleOperationType()
-
-    @Synchronized
-    private fun enqueueOperation(operation: FirstFragment.BleOperationType) {
-        operationQueue.add(operation)
-        if (pendingOperation == null) {
-            doNextOperation()
-        }
-    }
-
-    @Synchronized
-    private fun doNextOperation() {
-        if (pendingOperation != null) {
-            Log.e("ConnectionManager", "doNextOperatoin() called when an operation is pending! Aborting.")
-            return
-        }
-
-        val operation = operationQueue.poll() ?: run {
-            Log.v("OperationQueue""Operation Queue empty, returning")
-            return
-        }
-
-        pendingOperation = operation
-
-        when (operation) {
-            is FirstFragment.Connect -> Log.i(TAG_SCAN_FRAGMENT, "Connect")
-            is Disconnect -> Log.i(TAG_SCAN_FRAGMENT, "Disconnect")
-            is CharacteristicWrite -> Log.i(TAG_SCAN_FRAGMENT, "Write")
-            is CharacteristicRead -> Log.i(TAG_SCAN_FRAGMENT, "Read")
-        }
-    }
-
-    @Synchronized
-    private fun signalEndOfOperation() {
-        Log.d("ConnectionManager", "end of $pendingOperation")
-        pendingOperation = null
-        if (operationQueue.isNotEmpty()){
-            doNextOperation()
-        }
-    }
-
 
 }
