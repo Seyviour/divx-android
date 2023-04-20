@@ -25,4 +25,16 @@
             android:id="@+id/action_SecondFragment_to_FirstFragment"
             app:destination="@id/FirstFragment" />
     </fragment>
+    <fragment
+        android:id="@+id/XVideoFragment"
+        android:name="com.example.divx_demo.XVideoFragment"
+        android:label="XVideoFragment" >
+        <argument
+            android:name="uri"
+            app:argType="string" />
+        <argument
+            android:name="xid"
+            app:argType="string" />
+    </fragment>
+    <action android:id="@+id/action_global_XVideoFragment" app:destination="@id/XVideoFragment" />
 </navigation>
