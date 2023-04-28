@@ -312,41 +312,11 @@ class FirstFragment : Fragment() {
             savedInstanceState: Bundle?
     ): View? {
         _binding = FragmentFirstBinding.inflate(inflater, container, false)
-
-
         return binding.root
-
-
     }
 
     var hasplayed = false
-    private fun play(){
 
-        if (binding.myPlayer.player == null){
-            binding.myPlayer.player = viewModel.player
-        }
-        val uri: Uri = RawResourceDataSource.buildRawResourceUri(R.raw.newton)
-
-
-//        val uri = "https://download.samplelib.com/mp3/sample-15s.mp3"
-        Log.d("DIVX", uri.toString())
-
-        val mediaItem = MediaItem.Builder().setMediaId(uri.toString()).build()
-
-        Log.d("DIVX-PLAAY", binding.myPlayer.player.toString())
-        Log.d("DIVX", "PLAYBACK SERVICE IS RUNNING: ${PlaybackService.isRunning}")
-        binding.myPlayer.player?.addMediaItem(mediaItem)
-        Log.d("DIVX", "PLAYBACK SERVICE IS RUNNING: ${mediaItem.toString()}")
-
-        with(binding.myPlayer.player){
-            this?.prepare()
-            this?.playWhenReady=true
-            this?.play()
-        }
-//        binding.myPlayer.player?.prepare()
-//        binding.myPlayer.player?.playWhenReady = true
-//        binding.myPlayer.player?.play()
-    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -366,16 +336,11 @@ class FirstFragment : Fragment() {
         super.onResume()
     }
 
-//    fun play (uri: Uri){
-//        val userAgent = context?.let {
-//            Util.getUserAgent(it.applicationContext, BuildConfig.APPLICATION_ID)
-//        }
-//    }
+
     override fun onStart() {
         if (viewModel.player == null){
             (activity as MainActivity)!!.acquirePlayer()
         }
-        binding.myPlayer.player = viewModel.player
         super.onStart()
 
     }
