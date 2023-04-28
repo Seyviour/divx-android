@@ -84,40 +84,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun displayResource(resource: XResourceType){
+        val navController = findNavController(R.id.nav_host_fragment_content_main)
 
-    var connectionListener = ConnectionEventListener().apply {
-        onCharacteristicChanged = {device: BluetoothDevice, characteristic: BluetoothGattCharacteristic ->
-            Log.d(DIVX_MAIN, "Executing Listener")
-            Log.d(DIVX_MAIN, "${characteristic.value.toHexString()}")
-            if (characteristic.uuid == UUID.fromString(XCODE_UUID) && device == viewModel.device.value){
-                var  linkedResource: XResourceType? = viewModel.getHardMappedResource(characteristic.value.toHexString())
-                if (linkedResource !=  null){
-                    val navController = findNavController(R.id.nav_host_fragment_content_main)
-                    when(linkedResource){
-                        is XVideo -> {
-                            navController.navigate(R.id.action_global_XVideoFragment,
-                                XVideoFragment.makeArgBundle(linkedResource.xid, linkedResource.uri.toString()))
-                        }
-
-                        is XAudio -> {
-                            navController.navigate(R.id.action_global_XVideoFragment,
-                                XVideoFragment.makeArgBundle(linkedResource.xid, linkedResource.uri.toString()))
-                        }
-
-                        is XQuiz -> {}
-
-                        is XWebpage -> {}
-
-                        is XImage -> {}
-                    }
-                }
+        when(resource){
+            is XVideo -> {
+                navController.navigate(R.id.action_global_XVideoFragment,
+                    XVideoFragment.makeArgBundle(resource.xid, resource.uri.toString()))
             }
+
+            is XAudio -> {
+                navController.navigate(R.id.action_global_XVideoFragment,
+                    XVideoFragment.makeArgBundle(resource.xid, resource.uri.toString()))
+            }
+
+            is XQuiz -> {}
+
+            is XWebpage -> {}
+
+            is XImage -> {}
         }
+
     }
 
-//    private val bleScanner by lazy {
-//        bluetoothAdapter.bluetoothLeScanner
-//    }
+
 
     private val scanResults = mutableListOf<ScanResult>()
 
@@ -140,10 +130,10 @@ class MainActivity : AppCompatActivity() {
         this?.startService(startMediaServiceIntent)
     }
 
+    @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         startMediaService()
-        acquirePlayer()
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -154,28 +144,58 @@ class MainActivity : AppCompatActivity() {
         appBarConfiguration = AppBarConfiguration(navController.graph)
         setupActionBarWithNavController(navController, appBarConfiguration)
 
-        viewModel.bluetoothDevice.observe(this, Observer{bluetoothDevice ->
+        viewModel.vmDevice.observe(this, Observer{bluetoothDevice ->
             bluetoothDevice?.let{
-                ConnectionManager.registerListener(connectionListener)
+                binding.textDeviceName.text = "${it.name}"
             }
-
         })
 
-        binding.fab.setOnClickListener { view ->
-            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
-        }
+        viewModel.connectionState.observe(this, Observer{connectionState ->
+            connectionState?.let{
+                binding.textConnectionState.text = if (it) "Connected" else "Disconnected"
+            }
+        })
+
+        viewModel.xCodeNotificationsEnabled.observe(this, Observer{notificationState ->
+            notificationState?.let{
+                binding.textXNotificationState.text = if(it) "Notifications Enabled" else "Notifications Disabled"
+
+                if (it) {
+                    val navController = findNavController(R.id.nav_host_fragment_content_main)
+                    navController.navigate(R.id.action_global_SecondFragment)
+                }
+            }
+        })
+
+        viewModel.currXCode.observe(this, Observer {currXCode ->
+            binding.textXCode.text = "Xcode: $currXCode"
+
+            var thisCode = viewModel.charToXCode(currXCode)
+            if (thisCode != "" && thisCode in viewModel.hardCodedResources){
+                val resource = viewModel.hardCodedResources[thisCode]
+                resource?.let{
+                    displayResource(it)
+//                    binding.textXResourceType.text = "Resource Type: $it.toString()"
+                }
+            }
+        })
     }
 
     override fun onResume() {
         Log.d(DIVX_MAIN, "PlaybackService Running: ${PlaybackService.isRunning}")
         Log.d("DIVX", "Calling onResume")
         super.onResume()
-        checkConnectedDevices()
+//        checkConnectedDevices()
         Log.d(DIVX_MAIN, "Bluetooth Adapter State: ${bluetoothAdapter.isEnabled.toString()}")
         if (!bluetoothAdapter.isEnabled){
             promptEnableBluetooth()
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        acquirePlayer()
+        viewModel.registerListener()
     }
 
 
