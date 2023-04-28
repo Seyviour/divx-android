@@ -95,5 +95,7 @@ fun BluetoothGattDescriptor.isCccd() =
 // ByteArray
 
 fun ByteArray.toHexString(): String =
-    joinToString(separator = " ", prefix = "0x") { String.format("%02X", it) }
+    joinToString(separator = "", prefix = "0x") { String.format("%02X", it) }
+
+fun ByteArray.toXCode(): String = toString(Charsets.US_ASCII)
 
